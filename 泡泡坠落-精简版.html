@@ -1,0 +1,1762 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>泡泡坠落 · 玩法原型 v4.1</title>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0}
+  html,body{height:100%;background:#DCE6E9;overflow:hidden;
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    display:flex;align-items:center;justify-content:center;color:#2B3B42}
+  /* 固定 400:680 比例，任何屏幕都不拉伸（手机上只是上下留边） */
+  #stage{position:relative;
+    width:min(100vw, calc(100vh * 400 / 680));
+    height:min(100vh, calc(100vw * 680 / 400));
+    overflow:hidden;background:#EDF2F4;box-shadow:0 20px 60px rgba(40,70,80,.22)}
+  canvas{display:block;width:100%;height:100%;touch-action:none}
+
+  /* 手机上留边和画面同色，看起来就是一整屏 */
+  @media (max-width:520px){
+    html,body{background:#EDF2F4}
+    #stage{box-shadow:none}
+  }
+
+  /* HUD 整排不透明横幅：数据整条横在顶部遮挡泡泡，SCREEN_TOP 与底边精确对齐 */
+  #hud{position:absolute;left:0;right:0;top:0;height:72px;padding:0 16px 0 56px;z-index:5;
+    display:flex;justify-content:space-between;align-items:center;
+    pointer-events:none;font-size:12px;letter-spacing:.5px;
+    background:rgba(255,255,255,.97);border-bottom:1px solid rgba(40,70,80,.10);
+    box-shadow:0 2px 10px rgba(40,70,80,.10)}
+  #btnQuit{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:32px;height:32px;
+    border-radius:50%;border:1.5px solid rgba(40,70,80,.35);background:rgba(255,255,255,.92);
+    color:#2B3B42;font-size:14px;line-height:1;cursor:pointer;display:none;
+    align-items:center;justify-content:center;padding:0;font-weight:700;pointer-events:auto}
+  #btnQuit.on{display:flex}
+  .stat{text-align:center;line-height:1.35}
+  .stat b{display:block;font-size:19px;font-weight:700;letter-spacing:0}
+  .stat span{opacity:.42;font-size:10px}
+
+  /* 连击区：固定在 HUD 下方居中，不跟着消除位置跑 */
+  #comboZone{position:absolute;left:0;right:0;top:78px;display:flex;flex-direction:column;
+    align-items:center;gap:4px;pointer-events:none;opacity:0;transition:opacity .25s}
+  #comboText{font-size:24px;font-weight:800;letter-spacing:2px;
+    font-family:"Yuanti SC","YouYuan","Microsoft YaHei",sans-serif;
+    text-shadow:0 1px 0 #fff,0 -1px 0 #fff,1px 0 0 #fff,-1px 0 0 #fff,0 3px 8px rgba(40,70,80,.18);
+    transform-origin:center;white-space:nowrap}
+  #comboBar{width:130px;height:5px;border-radius:3px;background:rgba(40,70,80,.12);overflow:hidden}
+  #comboBar i{display:block;height:100%;width:100%;border-radius:3px;background:#E2793F}
+
+  #tip{position:absolute;left:0;right:0;bottom:58px;text-align:center;
+    font-size:11px;opacity:.42;pointer-events:none;line-height:1.6}
+
+  #tools{position:absolute;left:0;right:0;bottom:12px;display:flex;gap:8px;
+    justify-content:center;padding:0 12px}
+  #tools button{flex:1;max-width:92px;padding:9px 0;border-radius:16px;
+    border:1px solid rgba(40,70,80,.16);
+    background:rgba(255,255,255,.82);color:#2B3B42;font-size:11px;font-family:inherit;
+    cursor:pointer;backdrop-filter:blur(6px)}
+  #tools button:disabled{opacity:.32}
+
+  #overlay{position:absolute;inset:0;display:none;flex-direction:column;
+    align-items:center;justify-content:center;gap:14px;
+    background:rgba(237,242,244,.9);backdrop-filter:blur(6px);z-index:9}
+  #overlay.on{display:flex}
+  #overlay h2{font-size:22px;font-weight:700;letter-spacing:2px}
+  #ovStars{font-size:30px;letter-spacing:10px;line-height:1;margin-top:-4px}
+  #ovStars .on{color:#E2A94A}
+  #ovStars .off{color:rgba(43,59,66,.14)}
+  #overlay p{font-size:12px;opacity:.55;white-space:pre-line;text-align:center;line-height:1.9}
+  #overlay button{padding:12px 26px;border-radius:22px;border:0;font-family:inherit;
+    font-size:13px;font-weight:600;cursor:pointer;background:#5FB8C4;color:#fff}
+  #overlay button.ghost{background:rgba(40,70,80,.10);color:#2B3B42}
+
+  /* ===== 面板：主页 / 章节 / 图鉴 / 盲盒 ===== */
+  .panel{position:absolute;inset:0;z-index:8;display:none;flex-direction:column;
+    align-items:center;gap:12px;background:#EDF2F4;overflow-y:auto;padding:60px 22px 30px}
+  .panel.on{display:flex}
+  .panel h1{font-size:26px;font-weight:700;letter-spacing:6px;margin:2px 0 0}
+  .panel .tag{font-size:10px;letter-spacing:4px;opacity:.4;margin-bottom:10px}
+  .panel button{padding:12px 0;width:100%;max-width:300px;border-radius:22px;border:0;
+    font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;background:#5FB8C4;color:#fff}
+  .panel button.ghost{background:rgba(40,70,80,.10);color:#2B3B42;font-weight:500;font-size:12px}
+  .panel button:disabled{opacity:.35}
+  .panel .back{position:absolute;left:16px;top:16px;width:auto;max-width:none;
+    padding:8px 14px;border-radius:16px;background:rgba(40,70,80,.08);color:#2B3B42;
+    font-size:12px;font-weight:500}
+  .meta-line{font-size:11px;opacity:.55;line-height:1.8;text-align:center;white-space:pre-line}
+  .chap{width:100%;max-width:320px;border:1px solid rgba(40,70,80,.14);border-radius:14px;
+    padding:12px 14px;background:rgba(255,255,255,.5)}
+  .chap .cn{font-size:13px;font-weight:700;margin-bottom:8px}
+  .chap .cn em{font-style:normal;font-size:10px;color:#E2A94A;margin-left:6px}
+  .chap .lv{display:flex;gap:8px}
+  .chap .lv button{padding:9px 0;font-size:12px;border-radius:12px;flex:1;max-width:none;width:auto}
+  .slot-grid{display:grid;grid-template-columns:repeat(3,88px);gap:10px;margin:6px 0 2px}
+  .slot{height:74px;border-radius:12px;border:1px solid rgba(40,70,80,.14);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    font-size:11px;background:rgba(255,255,255,.55);text-align:center;line-height:1.5;padding:4px}
+  .slot.no{opacity:.35}
+  .slot.hid{border-color:rgba(226,169,74,.75);background:rgba(226,169,74,.10)}
+  .slot.hid.no{color:#B98A2E}
+  .slot.pick{border-style:dashed;border-color:#E2A94A;cursor:pointer;opacity:1}
+  .slot.pick:active{transform:scale(.95)}
+  .slot b{font-size:10px;font-weight:600}
+  #coTabs{display:flex;gap:6px}
+  #coTabs button{width:auto;max-width:none;padding:8px 12px;font-size:11px;border-radius:14px}
+  #coTabs button.cur{background:#2B3B42}
+
+  /* 退出按钮：闯关局内常驻左上角（残局暂存入口） */
+  #btnQuit{position:absolute;top:12px;left:12px;z-index:6;width:30px;height:30px;
+    border-radius:50%;border:1.5px solid rgba(40,70,80,.35);background:rgba(255,255,255,.92);
+    color:#2B3B42;font-size:14px;line-height:1;cursor:pointer;display:none;
+    align-items:center;justify-content:center;padding:0;font-weight:700}
+  #btnQuit.on{display:flex}
+
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="cv"></canvas>
+
+  <div id="hud">
+    <button id="btnQuit" title="退出本局">✕</button>
+    <div class="stat"><b id="sTime">--</b><span>时间</span></div>
+    <div class="stat"><b id="sScore">0</b><span>分数</span></div>
+    <div class="stat"><b id="sLevel">1</b><span>关卡</span></div>
+    <div class="stat"><b id="sGot">0</b><span>消除</span></div>
+  </div>
+
+  <div id="comboZone">
+    <div id="comboText"></div>
+    <div id="comboBar"><i id="comboBarI"></i></div>
+  </div>
+
+  <div id="tools">
+    <button id="btnPause">暂停 ×2</button>
+    <button id="btnSink">下落</button>
+    <button id="btnSlow">缓降 ×2</button>
+    <button id="btnTime">加时 ×2</button>
+    <button id="btnShuffle">打乱 ×1</button>
+    <button id="btnHome">☰ 主页</button>
+  </div>
+
+  <div id="tip">点两个同样的物件消除　·　← → / A D 调整重力方向（手机端直接倾斜）</div>
+
+  <div id="overlay">
+    <h2 id="ovTitle">泡泡到底了</h2>
+    <div id="ovStars"></div>
+    <p id="ovDesc"></p>
+    <button id="btnRevive">看广告 · 收回两行</button>
+    <button id="btnNext">下一关</button>
+    <button id="btnRestart" class="ghost">重新开始</button>
+    <button id="btnMenu" class="ghost" style="display:none">回主页</button>
+  </div>
+
+  <div id="menu" class="panel">
+    <h1>泡泡坠落</h1>
+    <div class="tag">POP · DROP · MATCH</div>
+    <button id="mStory">闯关模式</button>
+    <button id="mEndless">无尽模式</button>
+    <div class="meta-line" id="mMeta"></div>
+  </div>
+
+  <div id="chapters" class="panel">
+    <button class="back" id="chBack">← 主页</button>
+    <div id="chList" style="width:100%;display:flex;flex-direction:column;gap:12px;align-items:center"></div>
+    <button id="chUnlock" class="ghost">（测试）解锁全部关卡</button>
+  </div>
+
+  <div id="quitP" class="panel">
+    <h1 style="font-size:20px;letter-spacing:3px">退出本局？</h1>
+    <div class="meta-line">稍后继续会保存当前残局，下次从本关进入时接着玩；立即结算则本局作废</div>
+    <button id="qResume">稍后继续</button>
+    <button id="qSettle" class="ghost">立即结算</button>
+    <button id="qCancel" class="ghost">继续游戏</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  /* ================= 基础 ================= */
+  const W = 400, H = 680;
+  const TAU = Math.PI * 2;
+  const S = Math.min(window.devicePixelRatio || 1, 2);
+
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  cv.width = W * S; cv.height = H * S;
+  ctx.setTransform(S, 0, 0, S, 0, 0);
+
+  const sScore = document.getElementById('sScore');
+  const sGot   = document.getElementById('sGot');
+  const sLevel = document.getElementById('sLevel');
+  const sTime  = document.getElementById('sTime');
+  const overlay= document.getElementById('overlay');
+  const ovTitle= document.getElementById('ovTitle');
+  const ovDesc = document.getElementById('ovDesc');
+  const ovStars= document.getElementById('ovStars');
+  const btnRevive = document.getElementById('btnRevive');
+  const btnRestart= document.getElementById('btnRestart');
+  const btnNext   = document.getElementById('btnNext');
+  const btnPause  = document.getElementById('btnPause');
+  const btnSink   = document.getElementById('btnSink');
+  const btnSlow   = document.getElementById('btnSlow');
+  const btnTime   = document.getElementById('btnTime');
+  const btnShuffle= document.getElementById('btnShuffle');
+  const btnHome   = document.getElementById('btnHome');
+  const btnMenu   = document.getElementById('btnMenu');
+  const btnQuit   = document.getElementById('btnQuit');
+  const quitP     = document.getElementById('quitP');
+  const comboZone = document.getElementById('comboZone');
+  const comboText = document.getElementById('comboText');
+  const comboBarI = document.getElementById('comboBarI');
+
+  /* ================= 物件类型（材质决定物理与音色） =================
+     ds = 绘制尺寸：以「半径 14 的圆」的面积为基准，按各形状实际面积折算，
+     保证所有物件在视觉上一样大（圆形不再显得比三角形大） */
+  const TYPES = [
+    { id:0, name:'瓷瓶',  color:'#4FB3B3', mat:'瓷',   shape:'diamond',  r:13, rest:0.52, dens:1.3, ds:18.0 },
+    { id:1, name:'木盒',  color:'#C0824C', mat:'木',   shape:'square',   r:14, rest:0.28, dens:0.9, ds:13.7 },
+    { id:2, name:'铁球',  color:'#7C8894', mat:'铁',   shape:'circle',   r:11, rest:0.70, dens:2.6, ds:13.0 },
+    { id:3, name:'玻璃杯',color:'#84CBDF', mat:'玻璃', shape:'triangle', r:13, rest:0.62, dens:1.0, ds:18.1 },
+    { id:4, name:'布偶',  color:'#DB8FAB', mat:'布',   shape:'soft',     r:15, rest:0.06, dens:0.4, ds:12.4 },
+    { id:5, name:'石雕',  color:'#AE9C82', mat:'石',   shape:'hex',      r:14, rest:0.32, dens:2.1, ds:14.3 }
+  ];
+
+  /* ================= 布局（棋盘只存在于代码里，不画出来） ================= */
+  const BG = '#EDF2F4';
+  const SEL = '#E2793F';      // 选中描边
+  const BR = 26;              // 泡泡半径（缩小一咪咪，给间距留呼吸感）
+  const SP = 60;              // 同排相邻泡泡中心距（泡间固定 8px 缝）
+  const VSP = SP * 0.866;     // 相邻两排垂直距：错开半格后对角线中心距仍是 SP
+  const WIDE_N = 6;           // 偶数排 6 个
+  const NARROW_N = 5;         // 奇数排 5 个（各自居中 → 天然错位，左右对称）
+  const BASE_BOTTOM = 232;    // 开局最下一排的圆心高度：露出 4 排（约22个，刚好在 min-20 门槛上），
+                              // 其余藏在屏幕外；到底线还留约 7 排的下沉预算
+  const FAIL_Y = 620;
+
+  // 4 章 × 每章 16 关：章节与盲盒套系一一对应。
+  // 节奏全关卡统一（不因关卡而异）：越消越快，难度靠规模（排数/种类）递增；
+  // 限时 = 对数 × 2.2 秒（下限 45s），星级与失败都由时间判定。
+  const SCREEN_TOP = 72;                   // HUD 横幅底边：圆心在这之上的泡泡不算「屏幕上」
+  const MIN_ONSCREEN = 20;                 // 屏上不足 20 → 自动下沉补位（仅当上方还有被遮挡的泡泡；到点的时间下沉始终独立存在）
+  const COMBO_WINDOW = 2.8;                // 连击读秒窗口（秒），条清空连击断
+  const PACE0 = { base: 11.0, min: 5.0, acc: 0.15 };  // 下沉间隔：起步 11s/排，每消一对 -0.15s，下限 5s
+  const LVC = 16;                          // 阶段长度（难度曲线按 16 关一档递进，仅内部用）
+  const TIME_PER_PAIR = 2.4;               // 限时：每目标对配 2.4 秒（下限 60s）——时间只负责失败判定，星级由分数决定
+  const SCORE3 = 0.85, SCORE2 = 0.50;      // 星级按分数：达满分（目标对数×30）85% 3★，50% 2★，其余 1★
+  const LOCK3_NEED = 4;                    // 全局锁：任意消除 4 次解锁
+
+  // 生成排布用：洗牌并尽量避开同色相邻（成对生成≠成对摆放；纯随机洗牌天然有 ~33% 相邻同色率，
+  // 观感上就是「同色总是挨着」——重采样最多 8 次，极端重复色场景接受失败）
+  function shuffledNoAdj(ids){
+    for (let tries = 0; tries < 8; tries++){
+      for (let i = ids.length - 1; i > 0; i--){
+        const j = Math.floor(Math.random() * (i + 1));
+        const t = ids[i]; ids[i] = ids[j]; ids[j] = t;
+      }
+      let bad = false;
+      for (let i = 1; i < ids.length; i++) if (ids[i] === ids[i - 1]){ bad = true; break; }
+      if (!bad) return ids;
+    }
+    return ids;
+  }
+  const LEVELS = [];
+  for (let i = 0; i < 64; i++){
+    // 难度曲线按原 4 阶段公式递进（阶段=每 16 关一档），UI 上不分章、64 关一页平铺
+    const c = Math.floor(i / LVC), l = i % LVC;
+    // 目标对数 30 → 117（普通手速约 1~4 分钟）
+    // 锁泡泡渐进引入：第 1~4 关教学无锁 → 锁1（消1邻）→ 锁2（消2邻）→ 锁3（全局消除解锁）
+    const locks = {};
+    if (c === 0 && l >= 4) locks.n1 = 2 + Math.floor(l / 6);
+    if (c === 1){ locks.n1 = 3; locks.n2 = 2 + Math.floor(l / 6); }
+    if (c === 2){ locks.n1 = 2; locks.n2 = 3; locks.n3 = 2 + Math.floor(l / 6); }
+    if (c === 3){ locks.n1 = 2; locks.n2 = 4; locks.n3 = 4; }
+    LEVELS.push({
+      rows: Math.min(6 + c + (l >= 8 ? 1 : 0), 9),
+      types: Math.min(3 + c + Math.floor(l / 5), 6),
+      pairs: 30 + c * 12 + l * 3,
+      locks: locks
+    });
+  }
+
+  /* ================= 状态 ================= */
+  let bubbles = [];       // 静态圆，{x,y,r,type}
+  let bodies  = [];       // 动态刚体
+  let pops    = [];
+  let particles = [];
+  let floats  = [];       // 飘字
+  let sel = null;
+  let score = 0, collected = 0, combo = 0, comboT = 0, pairsPopped = 0;
+  let levelIdx = 0, levelTime = 0, stars = 0;
+  let timeLimit = 0, timeLeft = 0;   // 关卡限时（秒）；endless 为 0 不限时
+  let targetPairs = 0;               // 浪潮制目标对数：消除满即过关（endless 为 0）
+  let failByTime = false;            // 失败原因：true=时间耗尽（复活=补 20 秒），false=压线（复活=收回两行）
+  let mode = 'level';      // 'level' 闯关 | 'endless' 无尽
+  let sinkCount = 0;       // 本次对局已下沉的排数（无尽难度递增用）
+  let slowOn = false;      // 缓降道具：本局已用
+  let save = {
+    stars: {},
+    best: 0, unlockedAll: false
+  };
+  // 道具每局固定发放（用户定）：缓降/暂停/打乱/加时各 2 个，用完即止，下一局重置
+  let props = { slow: 2, pause: 2, shuffle: 2, time: 2 };
+  let descendT = 0, sinkLeft = 0, pausedT = 0;
+  let deepestBottom = 0;   // 本关泡泡下沉到过的最深位置（判星用，清空后依然有效）
+  let running = true, revived = false;
+  let tiltX = 0;
+  let nextWide = true;     // 无尽补排：下一排是宽排还是窄排
+  let oddDebt = null;      // 无尽补排：跨排配对的孤品 type（保持全局每种偶数个）
+  let comboScale = 1;      // 连击大字的弹跳缩放
+  let shakeT = 0;
+  let globalLockCharge = 0;   // 全局锁（lock3）的累计消除次数
+  let nowT = 0;
+
+  /* ================= 音效 ================= */
+  let AC = null, sndBudget = 0, melIdx = 0;
+  const MELODY = [
+    523.25, 587.33, 659.25, 783.99, 880.00, 1046.50,
+    987.77, 880.00, 783.99, 698.46, 659.25, 587.33
+  ];
+
+  function audio(){
+    if (!AC){
+      const Ctor = window.AudioContext || window.webkitAudioContext;
+      if (!Ctor) return null;
+      AC = new Ctor();
+    }
+    if (AC.state === 'suspended') AC.resume();
+    return AC;
+  }
+
+  function tone(freq, dur, vol, type, delay){
+    const c = audio(); if (!c) return;
+    const t = c.currentTime + (delay || 0);
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = type || 'sine';
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(c.destination);
+    o.start(t); o.stop(t + dur + 0.03);
+  }
+
+  function noise(dur, vol, cutoff){
+    const c = audio(); if (!c) return;
+    const t = c.currentTime;
+    const len = Math.max(1, Math.floor(c.sampleRate * dur));
+    const buf = c.createBuffer(1, len, c.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 1.6);
+    const src = c.createBufferSource(); src.buffer = buf;
+    const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = cutoff || 2000;
+    const g = c.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f); f.connect(g); g.connect(c.destination);
+    src.start(t);
+  }
+
+  // 每消一次走一个旋律音，连起来就是一首歌
+  function playPop(){
+    const f = MELODY[melIdx % MELODY.length];
+    melIdx++;
+    tone(f, 0.34, 0.10, 'sine');
+    tone(f * 2, 0.22, 0.035, 'sine', 0.004);
+    noise(0.05, 0.055, 5200);
+  }
+
+  // 材质碰撞音
+  function playHit(mat, v){
+    if (sndBudget <= 0) return;
+    sndBudget--;
+    const vol = Math.min(0.28, 0.05 + v / 2600);
+    switch (mat){
+      case '瓷':
+        tone(1380, 0.26, vol, 'sine');
+        tone(2120, 0.18, vol * 0.42, 'sine');
+        noise(0.05, vol * 0.5, 4200);
+        break;
+      case '玻璃':
+        tone(2350, 0.16, vol * 0.85, 'sine');
+        tone(3480, 0.11, vol * 0.30, 'sine');
+        noise(0.04, vol * 0.4, 6800);
+        break;
+      case '铁':
+        tone(418, 0.55, vol, 'triangle');
+        tone(762, 0.48, vol * 0.48, 'sine');
+        tone(1128, 0.42, vol * 0.24, 'sine');
+        break;
+      case '木':
+        tone(152, 0.15, vol, 'triangle');
+        noise(0.08, vol * 0.6, 900);
+        break;
+      case '布':
+        noise(0.10, vol * 0.34, 620);
+        break;
+      case '石':
+        tone(96, 0.20, vol, 'triangle');
+        noise(0.11, vol * 0.7, 750);
+        break;
+    }
+  }
+
+  /* ================= 图形 ================= */
+  function rrPath(c, x, y, w, h, r){
+    c.beginPath();
+    c.moveTo(x + r, y);
+    c.arcTo(x + w, y, x + w, y + h, r);
+    c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r);
+    c.arcTo(x, y, x + w, y, r);
+    c.closePath();
+  }
+
+  function shapePath(c, shape, r){
+    c.beginPath();
+    switch (shape){
+      case 'circle':
+        c.arc(0, 0, r, 0, TAU);
+        break;
+      case 'square': {
+        const s = r * 0.84;
+        rrPath(c, -s, -s, s * 2, s * 2, 3.5);
+        break;
+      }
+      case 'diamond':
+        c.moveTo(0, -r); c.lineTo(r * 0.82, 0); c.lineTo(0, r); c.lineTo(-r * 0.82, 0);
+        c.closePath();
+        break;
+      case 'triangle':
+        c.moveTo(0, -r); c.lineTo(r * 0.94, r * 0.72); c.lineTo(-r * 0.94, r * 0.72);
+        c.closePath();
+        break;
+      case 'hex':
+        for (let i = 0; i < 6; i++){
+          const a = -Math.PI / 2 + i * Math.PI / 3;
+          const x = Math.cos(a) * r, y = Math.sin(a) * r;
+          if (i === 0) c.moveTo(x, y); else c.lineTo(x, y);
+        }
+        c.closePath();
+        break;
+      default:
+        c.arc(0, 0, r, 0, TAU);
+    }
+  }
+
+  function drawObject(c, type, x, y, r, rot, alpha){
+    c.save();
+    c.globalAlpha = alpha === undefined ? 1 : alpha;
+    c.translate(x, y);
+    c.rotate(rot || 0);
+
+    c.fillStyle = type.color;
+    shapePath(c, type.shape, r);
+    c.fill();
+
+    c.strokeStyle = 'rgba(28,48,58,.20)';
+    c.lineWidth = 1;
+    shapePath(c, type.shape, r);
+    c.stroke();
+
+    // 高光（小一点、淡一点，否则会把物件颜色洗白）
+    c.globalAlpha *= 0.20;
+    c.fillStyle = '#ffffff';
+    shapePath(c, type.shape, r * 0.34);
+    c.save(); c.translate(-r * 0.30, -r * 0.34); c.fill(); c.restore();
+    c.restore();
+  }
+
+  function withA(hex, a){
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
+  }
+
+  // 泡泡：投影 + 外发光 + 泡体渐变 + 下缘内壁反光 + 左上高光
+  function drawBubble(b, bx, by, isSel, alpha){
+    const r = b.r;
+
+    ctx.save();
+    ctx.globalAlpha = 0.09 * alpha;
+    ctx.fillStyle = '#2E4A56';
+    ctx.beginPath();
+    ctx.ellipse(bx + 1, by + r * 0.95, r * 0.80, r * 0.24, 0, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+
+    if (isSel){
+      ctx.beginPath();
+      ctx.arc(bx, by, r + 5.5, 0, TAU);
+      ctx.strokeStyle = 'rgba(226,121,63,.30)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    const glow = ctx.createRadialGradient(bx, by, r * 0.86, bx, by, r * 1.22);
+    glow.addColorStop(0, withA(b.type.color, 0.24 * alpha));
+    glow.addColorStop(1, withA(b.type.color, 0));
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(bx, by, r * 1.20, 0, TAU);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(bx, by, r, 0, TAU);
+    const gr = ctx.createRadialGradient(
+      bx - r * 0.30, by - r * 0.40, r * 0.06,
+      bx, by, r * 1.03
+    );
+    gr.addColorStop(0, 'rgba(255,255,255,' + (0.76 * alpha) + ')');
+    gr.addColorStop(0.38, withA(b.type.color, 0.18 * alpha));
+    gr.addColorStop(0.84, withA(b.type.color, 0.09 * alpha));
+    gr.addColorStop(1, 'rgba(132,182,198,' + (0.55 * alpha) + ')');
+    ctx.fillStyle = gr;
+    ctx.fill();
+
+    ctx.strokeStyle = isSel ? SEL : 'rgba(118,168,183,' + (0.62 * alpha) + ')';
+    ctx.lineWidth = isSel ? 2.6 : 1.2;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(bx, by, r * 0.86, Math.PI * 0.22, Math.PI * 0.78);
+    ctx.strokeStyle = 'rgba(255,255,255,' + (0.55 * alpha) + ')';
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+
+    // 锁泡泡：不画物件，画锁壳——灰锁（消1邻）/ 铜锁（消2邻）/ 金魔法锁（全局消除解锁）
+    if (b.lock){
+      const lc = b.lock === 3 ? '#E2A94A' : (b.lock === 2 ? '#C48A4A' : '#8C969E');
+      ctx.beginPath();
+      ctx.arc(bx, by, r * 0.66, 0, TAU);
+      ctx.fillStyle = lc;
+      ctx.globalAlpha = 0.92 * alpha;
+      ctx.fill();
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = 'rgba(50,60,70,.55)';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      // 锁梁
+      ctx.beginPath();
+      ctx.arc(bx, by - r * 0.14, r * 0.26, Math.PI, 0);
+      ctx.strokeStyle = 'rgba(50,60,70,.9)';
+      ctx.lineWidth = r * 0.12;
+      ctx.stroke();
+      // 锁体
+      ctx.beginPath();
+      const lw = r * 0.56, lh = r * 0.42;
+      ctx.moveTo(bx - lw / 2, by - r * 0.02);
+      ctx.lineTo(bx - lw / 2, by + lh - r * 0.02);
+      ctx.quadraticCurveTo(bx - lw / 2, by + lh + 2 - r * 0.02, bx - lw / 2 + 3, by + lh + 2 - r * 0.02);
+      ctx.lineTo(bx + lw / 2 - 3, by + lh + 2 - r * 0.02);
+      ctx.quadraticCurveTo(bx + lw / 2, by + lh + 2 - r * 0.02, bx + lw / 2, by + lh - r * 0.02);
+      ctx.lineTo(bx + lw / 2, by - r * 0.02);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(55,66,78,.95)';
+      ctx.fill();
+      // 剩余计数：锁3 显示全局剩余次数，其余显示自身剩余次数
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.font = '700 ' + Math.round(r * 0.44) + 'px sans-serif';
+      ctx.fillText(b.lock === 3 ? String(Math.max(0, b.lockNeed - globalLockCharge)) : String(b.lockLeft), bx, by + r * 0.36);
+      ctx.textAlign = 'left';
+      return;   // 锁泡不画物件与高光，直接结束
+    }
+
+    drawObject(ctx, b.type, bx, by, b.type.ds, 0, 0.97 * alpha);
+
+    const hl = ctx.createRadialGradient(
+      bx - r * 0.38, by - r * 0.42, 0,
+      bx - r * 0.38, by - r * 0.42, r * 0.42
+    );
+    hl.addColorStop(0, 'rgba(255,255,255,' + (0.62 * alpha) + ')');
+    hl.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = hl;
+    ctx.beginPath();
+    ctx.arc(bx - r * 0.38, by - r * 0.42, r * 0.42, 0, TAU);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(bx - r * 0.34, by - r * 0.36, r * 0.11, 0, TAU);
+    ctx.fillStyle = 'rgba(255,255,255,' + (0.85 * alpha) + ')';
+    ctx.fill();
+  }
+
+  /* ================= 关卡构建 ================= */
+  function buildLevel(idx){
+    mode = 'level';
+    levelIdx = (idx === undefined) ? levelIdx : Math.max(0, Math.min(LEVELS.length - 1, idx));
+    // 同关直接新开局（下一关/重试/重玩）= 旧残局作废（restoreResume 已先取走快照，不受影响）
+    if (resume && resume.idx === levelIdx) clearResume();
+    resetBoard(LEVELS[levelIdx]);
+  }
+
+  // 无尽模式：棋盘只涨不赢，下落间隔随下沉排数逐步收紧，压线即终局
+  function buildEndless(){
+    mode = 'endless';
+    levelIdx = 0;
+    sinkCount = 0;
+    resetBoard({ rows: 9, types: 6 });
+  }
+
+  function resetBoard(cfg){
+    bubbles = []; bodies = []; pops = []; particles = []; floats = [];
+    sel = null;
+    score = 0; collected = 0; combo = 0; comboT = 0; pairsPopped = 0;
+    props = { slow: 2, pause: 2, shuffle: 2, time: 2 };   // 道具每局固定重发
+    levelTime = 0; stars = 0;
+    descendT = 0; sinkLeft = 0; pausedT = 0;
+    deepestBottom = 0;
+    globalLockCharge = 0;
+    running = true; revived = false; shakeT = 0;
+    slowOn = false;
+    melIdx = 0;
+    comboScale = 1;
+    oddDebt = null;
+    overlay.classList.remove('on');
+    ovStars.innerHTML = '';
+    btnNext.style.display = 'none';
+    btnMenu.style.display = 'none';
+    comboZone.style.opacity = '0';
+    refreshHUD();
+    const rowN = [];
+    if (mode === 'level' && cfg.pairs){
+      // 供给精确制：闯关总供给 = 目标对数 × 2 枚，一枚不多一枚不少，开局全部排进棋盘
+      // （上方藏排随下沉滑入）——通关 = 完全消完，屏上不再有「多余的浪」
+      let need = cfg.pairs * 2;
+      for (let r = 0; need > 0; r++){
+        const n = Math.min(need, (r % 2 === 0) ? WIDE_N : NARROW_N);
+        rowN.push(n); need -= n;
+      }
+    } else {
+      for (let r = 0; r < cfg.rows; r++){
+        rowN.push((r % 2 === 0) ? WIDE_N : NARROW_N);
+      }
+    }
+    nextWide = (rowN.length % 2 === 0);   // 无尽补排：接在最后一排后面继续宽窄交替
+    let total = 0;
+    for (let r = 0; r < rowN.length; r++) total += rowN[r];
+    // 供给制：targetPairs 对全部开局排进棋盘，通关 = 完全消完（棋盘清空时恰好消满）
+    // 限时 = 目标对数 × 2.4 秒（下限 60s）——时间只管失败，星级由分数定。无尽不限时
+    targetPairs = (mode === 'endless') ? 0 : (cfg.pairs || 0);
+    timeLimit = (mode === 'endless') ? 0 : Math.max(60, Math.round(targetPairs * TIME_PER_PAIR));
+    timeLeft = timeLimit;
+    failByTime = false;
+    // 总数凑成偶数（每枚泡泡都必须有对子）：从最顶上一排抠掉一个，
+    // 那一排在开局时藏在屏幕外，不会破坏可见排布的对称与间距
+    let holeRow = -1, holeCol = -1;
+    if (total % 2){
+      holeRow = 0; holeCol = Math.floor(rowN[0] / 2);
+      total -= 1;
+    }
+
+    // 对数按关卡物件种类均分，余数补给靠前的种类
+    const pairs = total / 2;
+    const typeN = Math.min(cfg.types, TYPES.length);
+    curTypes = typeN;   // 补排（appendRows）与此同源，不引入关卡外的种类
+    const per = Math.floor(pairs / typeN);
+    let rem = pairs - per * typeN;
+    const ids = [];
+    for (let ti = 0; ti < typeN; ti++){
+      const n = per + (rem-- > 0 ? 1 : 0);
+      for (let i = 0; i < n; i++){ ids.push(ti); ids.push(ti); }
+    }
+    shuffledNoAdj(ids);
+
+    // 整片以「最下一排」为锚点向上长：排数越多，藏在上方的排就越多，
+    // 开局只露出下半截，下沉时上方的泡泡才慢慢滑进画面
+    let k = 0;
+    for (let r = 0; r < rowN.length; r++){
+      const n = rowN[r];
+      const y = BASE_BOTTOM - (rowN.length - 1 - r) * VSP;
+      const left = W / 2 - (n - 1) * SP / 2;   // 每排独立居中 → 间距绝对均匀
+      for (let c = 0; c < n; c++){
+        if (r === holeRow && c === holeCol) continue;   // 顶排的空位
+        bubbles.push({
+          x: left + c * SP,
+          y: y,
+          r: BR,
+          jx: (Math.random() - 0.5) * 4,   // ±2px 视觉抖动：只影响绘制，不影响命中与物理
+          isStatic: true,     // 关键：静态体，物件撞上去只推自己
+          m: Infinity,
+          rest: 0.5,
+          phase: Math.random() * TAU,
+          type: TYPES[ids[k++]],
+          lock: 0, lockLeft: 0, lockNeed: 0
+        });
+      }
+    }
+    sinkLeft = 0;
+    deepestBottom = lowestBubbleBottom();   // 开局基准：最下一排的底边
+    // 锁泡泡分配（仅闯关）：随机挑泡泡上锁。锁泡照常占位与下沉，但不显示内容、不可匹配，
+    // 按等级解锁：1=消 1 个邻近泡泡 / 2=消 2 个邻近泡泡 / 3=任意消除 4 次（全局计数）
+    if (cfg.locks && (cfg.locks.n1 || cfg.locks.n2 || cfg.locks.n3)){
+      const pool = bubbles.slice();
+      for (let i = pool.length - 1; i > 0; i--){
+        const j = Math.floor(Math.random() * (i + 1));
+        const t = pool[i]; pool[i] = pool[j]; pool[j] = t;
+      }
+      let k2 = 0;
+      const assign = (n, lv, need) => {
+        for (let i = 0; i < n && k2 < pool.length; i++){
+          const b = pool[k2++]; b.lock = lv; b.lockLeft = need; b.lockNeed = need;
+        }
+      };
+      if (cfg.locks.n1) assign(cfg.locks.n1, 1, 1);
+      if (cfg.locks.n2) assign(cfg.locks.n2, 2, 2);
+      if (cfg.locks.n3) assign(cfg.locks.n3, 3, LOCK3_NEED);
+    }
+    refreshHUD();
+  }
+
+  /* ================= 物理 ================= */
+  const G = 1500;
+
+  function gravityVec(){
+    const gx = tiltX;
+    const gy = Math.sqrt(Math.max(0.06, 1 - tiltX * tiltX));
+    return { x: gx * G, y: gy * G };
+  }
+
+  function makeBody(b){
+    return {
+      x: b.x, y: b.y,
+      vx: (Math.random() - 0.5) * 70,
+      vy: 40 + Math.random() * 50,
+      r: b.type.r,
+      rot: Math.random() * Math.PI,
+      spin: (Math.random() - 0.5) * 6,
+      m: Math.PI * b.type.r * b.type.r * b.type.dens * 0.01,
+      isStatic: false,
+      rest: b.type.rest,
+      type: b.type,
+      sndT: 0,
+      grow: 0.55,
+      still: 0
+    };
+  }
+
+  function resolvePair(a, b){
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const d2 = dx * dx + dy * dy;
+    const minD = a.r + b.r;
+    if (d2 >= minD * minD) return;
+    let d = Math.sqrt(d2);
+    if (d < 0.0001) d = 0.0001;
+    const nx = dx / d, ny = dy / d;
+
+    const aStatic = !!a.isStatic, bStatic = !!b.isStatic;
+    const ima = aStatic ? 0 : 1 / a.m;
+    const imb = bStatic ? 0 : 1 / b.m;
+    const imSum = ima + imb;
+    if (imSum === 0 || !isFinite(imSum)) return;
+
+    const pen = minD - d;
+    const corr = pen * 0.65;
+    a.x -= nx * corr * (ima / imSum);
+    a.y -= ny * corr * (ima / imSum);
+    b.x += nx * corr * (imb / imSum);
+    b.y += ny * corr * (imb / imSum);
+
+    const rvx = (b.vx || 0) - (a.vx || 0);
+    const rvy = (b.vy || 0) - (a.vy || 0);
+    const vn = rvx * nx + rvy * ny;
+    if (vn > 0) return;
+
+    const e = Math.min(a.rest === undefined ? 0.4 : a.rest, b.rest === undefined ? 0.4 : b.rest);
+    const j = -(1 + e) * vn / imSum;
+    if (!aStatic){ a.vx -= j * nx * ima; a.vy -= j * ny * ima; }
+    if (!bStatic){ b.vx += j * nx * imb; b.vy += j * ny * imb; }
+
+    const speed = -vn;
+    if (speed > 180){
+      if (!aStatic && a.sndT <= 0){ playHit(a.type.mat, speed); a.sndT = 0.12; }
+      if (!bStatic && b.sndT <= 0){ playHit(b.type.mat, speed); b.sndT = 0.12; }
+    }
+  }
+
+  function applyWalls(a){
+    let hitSpeed = 0;
+    if (a.x - a.r < 0){
+      a.x = a.r;
+      if (a.vx < 0){ hitSpeed = Math.max(hitSpeed, -a.vx); a.vx = -a.vx * a.rest; }
+    }
+    if (a.x + a.r > W){
+      a.x = W - a.r;
+      if (a.vx > 0){ hitSpeed = Math.max(hitSpeed, a.vx); a.vx = -a.vx * a.rest; }
+    }
+    if (a.y - a.r < 0){
+      a.y = a.r;
+      if (a.vy < 0){ a.vy = -a.vy * a.rest; }
+    }
+    if (hitSpeed > 180 && a.sndT <= 0){
+      playHit(a.type.mat, hitSpeed);
+      a.sndT = 0.12;
+    }
+  }
+
+  const SUB = 3;
+  function physicsStep(dt){
+    const g = gravityVec();
+    const h = dt / SUB;
+
+    for (let s = 0; s < SUB; s++){
+      for (let i = 0; i < bodies.length; i++){
+        const a = bodies[i];
+        a.vy += g.y * h;
+        a.vx += g.x * h;
+        a.vx *= (1 - 1.1 * h);
+        a.vy *= (1 - 0.35 * h);
+        a.x += a.vx * h;
+        a.y += a.vy * h;
+        a.rot += a.spin * h;
+        a.spin *= (1 - 1.0 * h);
+        if (a.sndT > 0) a.sndT -= h;
+        if (a.grow < 1) a.grow = Math.min(1, a.grow + h * 3.2);
+        if (Math.abs(a.vx) + Math.abs(a.vy) < 26) a.still += h; else a.still = 0;
+      }
+
+      for (let it = 0; it < 3; it++){
+        for (let i = 0; i < bodies.length; i++){
+          const a = bodies[i];
+          for (let j = 0; j < bubbles.length; j++){
+            const bb = bubbles[j];
+            if (Math.abs(a.x - bb.x) > 60) continue;
+            if (Math.abs(a.y - bb.y) > 60) continue;
+            resolvePair(a, bb);
+          }
+          for (let j = i + 1; j < bodies.length; j++){
+            resolvePair(a, bodies[j]);
+          }
+        }
+        for (let i = 0; i < bodies.length; i++) applyWalls(bodies[i]);
+      }
+    }
+
+    for (let i = bodies.length - 1; i >= 0; i--){
+      const a = bodies[i];
+      if (a.y - a.r > H + 10){
+        bodies.splice(i, 1);
+        collected++;
+        refreshHUD();
+      }
+    }
+  }
+
+  /* ================= 交互 ================= */
+  function popPair(a, b){
+    a.dead = true; b.dead = true;
+    bodies.push(makeBody(a));
+    bodies.push(makeBody(b));
+
+    pops.push({ x: a.x, y: a.y, t: 0, color: a.type.color });
+    pops.push({ x: b.x, y: b.y, t: 0, color: b.type.color });
+    for (let i = 0; i < 5; i++){
+      particles.push({
+        x: a.x, y: a.y,
+        vx: (Math.random() - 0.5) * 120,
+        vy: (Math.random() - 0.5) * 120 - 30,
+        t: 0, life: 0.45, color: a.type.color
+      });
+      particles.push({
+        x: b.x, y: b.y,
+        vx: (Math.random() - 0.5) * 120,
+        vy: (Math.random() - 0.5) * 120 - 30,
+        t: 0, life: 0.45, color: b.type.color
+      });
+    }
+    shakeT = 0.12;
+    playPop();
+
+    combo = (comboT > 0) ? combo + 1 : 1;
+    comboT = COMBO_WINDOW;
+    pairsPopped++;
+    // 计分：非连击单次消除 10 分，连击第 2~5 次每对 20 分，第 6 次起 30 分封顶
+    const gain = combo >= 6 ? 30 : (combo >= 2 ? 20 : 10);
+    score += gain;
+    floats.push({
+      x: (a.x + b.x) / 2,
+      y: (a.y + b.y) / 2,
+      text: '+' + gain,
+      t: 0,
+      life: 0.7,
+      big: false
+    });
+    showCombo();
+    refreshHUD();
+
+    unlockNeighbors(a, b);
+    bubbleCleanup();
+    checkFail();
+    // 供给制：消除满目标对数即过关（若 checkFail 刚判了压线失败则 running 已 false，不会走到这）
+    if (running && mode === 'level' && targetPairs > 0 && pairsPopped >= targetPairs) settle(true);
+  }
+
+  // 锁泡泡解锁：lock1/2 看被消泡泡的邻近（蜂窝网格相邻 = 圆心距 < 1.25×SP），
+  // lock3 是全局锁：棋盘上任意消除一次就累计 1 点，攒满解锁
+  function unlockNeighbors(a, b){
+    let anyPop = false;
+    for (const bb of bubbles){
+      if (bb.dead || !bb.lock || bb.lock === 3) continue;
+      const nearA = Math.abs(bb.x - a.x) < SP * 1.25 && Math.abs(bb.y - a.y) < VSP * 1.25;
+      const nearB = Math.abs(bb.x - b.x) < SP * 1.25 && Math.abs(bb.y - b.y) < VSP * 1.25;
+      if (nearA || nearB){
+        anyPop = true;
+        bb.lockLeft--;
+        if (bb.lockLeft <= 0) unlockBubble(bb);
+      }
+    }
+    if (anyPop){
+      globalLockCharge++;
+      for (const bb of bubbles){
+        if (!bb.dead && bb.lock === 3 && globalLockCharge >= bb.lockNeed) unlockBubble(bb);
+      }
+    }
+  }
+
+  function unlockBubble(bb){
+    bb.lock = 0; bb.lockLeft = 0; bb.lockNeed = 0;
+    for (let i = 0; i < 8; i++){
+      particles.push({
+        x: bb.x, y: bb.y,
+        vx: (Math.random() - 0.5) * 180,
+        vy: (Math.random() - 0.5) * 180 - 50,
+        t: 0, life: 0.55, color: '#E2A94A'
+      });
+    }
+    floats.push({ x: bb.x, y: bb.y, text: '解锁！', t: 0, life: 0.8, big: false });
+    tone(880, 0.18, 0.07, 'sine');
+    noise(0.06, 0.10, 2600);
+  }
+
+  function bubbleCleanup(){
+    for (let i = bubbles.length - 1; i >= 0; i--){
+      if (bubbles[i].dead) bubbles.splice(i, 1);
+    }
+  }
+
+  // 命中半径比泡泡本身略大，但取「圆心最近」的那一个：
+  // 相邻泡泡的命中区会有重叠，按最近距离取才不会点错
+  function bubbleAt(px, py){
+    let best = null, bd = Infinity;
+    for (let i = 0; i < bubbles.length; i++){
+      const b = bubbles[i];
+      const dx = px - b.x, dy = py - b.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 <= (b.r + 8) * (b.r + 8) && d2 < bd){ bd = d2; best = b; }
+    }
+    return best;
+  }
+
+  function toLocal(e){
+    const r = cv.getBoundingClientRect();
+    return {
+      x: (e.clientX - r.left) / r.width * W,
+      y: (e.clientY - r.top) / r.height * H
+    };
+  }
+
+  function tapAt(px, py){
+    if (!running) return;
+    const hit = bubbleAt(px, py);
+    if (!hit) return;
+    // 锁泡泡不可选中不可匹配，先解锁（提示语用小飘字，不打断节奏）
+    if (hit.lock){
+      floats.push({ x: hit.x, y: hit.y, text: '先解锁', t: 0, life: 0.6, big: false });
+      return;
+    }
+
+    if (!sel){ sel = hit; return; }
+    if (sel === hit){ sel = null; return; }
+    if (sel.dead){ sel = hit; return; }
+
+    if (sel.type.id === hit.type.id){
+      const a = sel, b = hit;
+      sel = null;
+      popPair(a, b);
+    } else {
+      sel = hit;
+    }
+  }
+
+  let downPt = null, lastTap = -1e9;
+  cv.addEventListener('pointerdown', function(e){
+    if (!running) return;
+    audio();
+    downPt = toLocal(e);
+  });
+
+  cv.addEventListener('pointerup', function(e){
+    if (!downPt) return;
+    const p = toLocal(e);
+    const moved = Math.hypot(p.x - downPt.x, p.y - downPt.y);
+    downPt = null;
+    if (moved > 14) return;
+    lastTap = performance.now();
+    tapAt(p.x, p.y);
+  });
+
+  // 兜底：没有 pointer 事件的场景（合成点击 / 老浏览器）
+  cv.addEventListener('click', function(e){
+    if (performance.now() - lastTap < 400) return;
+    audio();
+    const p = toLocal(e);
+    tapAt(p.x, p.y);
+  });
+
+  /* ================= 下沉 / 失败 ================= */
+  // 节奏全关卡统一：起步 PACE0.base，每消一对加快 acc，压到 min 为止
+  // —— 难度只来自棋盘规模，不存在「永远过不去」的关
+  function stepInterval(){
+    if (mode === 'endless') return Math.max(5.0, 11.0 - sinkCount * 0.12) * (slowOn ? 1.35 : 1);
+    return Math.max(PACE0.min, PACE0.base - pairsPopped * PACE0.acc) * (slowOn ? 1.35 : 1);
+  }
+
+  function addSink(){
+    sinkLeft += VSP;         // 整片泡泡缓缓往下滑，而不是瞬移
+    sinkCount++;
+  }
+
+  // 屏幕上的泡泡数：圆心在 HUD 遮挡线之下的才算（被数据卡挡住的不算）
+  function onScreenCount(){
+    let n = 0;
+    for (let i = 0; i < bubbles.length; i++){
+      if (!bubbles[i].dead && bubbles[i].y > SCREEN_TOP) n++;
+    }
+    return n;
+  }
+
+  // 是否还有真正藏在屏幕外的排（圆心 y ≤ 10）
+  function aboveScreenExists(){
+    for (let i = 0; i < bubbles.length; i++){
+      if (bubbles[i].y <= 10) return true;
+    }
+    return false;
+  }
+
+  // 是否还有没露出来的泡泡（圆心还压在 HUD 线以上）——min-20 只在此时才允许下沉：
+  // 残局所有泡泡都已可见时绝不触发，否则会每一帧空坠直到压线
+  function unrevealedExists(){
+    for (let i = 0; i < bubbles.length; i++){
+      if (!bubbles[i].dead && bubbles[i].y <= SCREEN_TOP) return true;
+    }
+    return false;
+  }
+
+  // 无尽补排：在最顶排之上再生一排（宽窄交替），每次补一排直到有排藏在屏外。
+  // 配对规则：还上排欠的孤品 → 其余两两成对 → 若剩单数再欠一个给下排，
+  // 保证全局每种物件始终是偶数个，永不出现无法消除的孤儿。
+  // 生成后必须整体洗牌：成对生成≠成对摆放，否则同色总是紧挨着（用户反馈的 bug）
+  let curTypes = TYPES.length;   // 当前对局的物品种类数（关卡按 LEVELS.types，补排同源）
+
+  // 清空场景专用补泡：完全闭合的 N 对随机散布成两排（宽6+其余居中），不欠债不悬孤。
+  // （appendRows 的 oddDebt 跨排配对依赖「后续还有排」，清空后只有这批泡泡，欠债会变成永远无对的死泡）
+  function appendClosure(pairsN){
+    let top = Infinity;
+    for (const b of bubbles){ if (b.y < top) top = b.y; }
+    if (!isFinite(top)) top = SCREEN_TOP;   // 空棋盘：从 HUD 遮挡线上方铺起，随下沉滑入（不凭空出现）
+    const ids = [];
+    const used = {};   // 对子颜色去重：5 对互异色（curTypes=6），消灭同色 4 连
+    const drawT = () => {
+      let t, guard = 0;
+      do { t = Math.floor(Math.random() * curTypes); } while (used[t] && guard++ < 20);
+      used[t] = 1;
+      return t;
+    };
+    for (let i = 0; i < pairsN; i++){
+      const t = drawT();
+      ids.push(t, t);
+    }
+    shuffledNoAdj(ids);
+    const put = (arr, rowIdx) => {
+      const n = arr.length;
+      if (!n) return;
+      const y = top - VSP - rowIdx * VSP;   // 往屏幕外铺（藏在 HUD 上方）：第一排先滑入，绝不凭空出现
+      const left = W / 2 - (n - 1) * SP / 2;
+      for (let c = 0; c < n; c++){
+        bubbles.push({
+          x: left + c * SP, y, r: BR,
+          jx: (Math.random() - 0.5) * 4,
+          isStatic: true, m: Infinity, rest: 0.5,
+          phase: Math.random() * TAU,
+          type: TYPES[arr[c]],
+          lock: 0, lockLeft: 0, lockNeed: 0
+        });
+      }
+    };
+    put(ids.slice(0, 6), 0);
+    put(ids.slice(6), 1);
+  }
+
+  function appendRows(){
+    let top = Infinity;
+    for (let i = 0; i < bubbles.length; i++){
+      if (bubbles[i].y < top) top = bubbles[i].y;
+    }
+    const anchor = Math.min(top, SCREEN_TOP);   // 棋盘稀疏、顶排落在屏幕深处时：新排一律铺到 HUD 上方，随下沉滑入（不凭空出现）
+    const n = nextWide ? WIDE_N : NARROW_N;
+    nextWide = !nextWide;
+    const ids = [];
+    if (oddDebt !== null){ ids.push(oddDebt); oddDebt = null; }
+    const need = n - ids.length;
+    const pairsN = Math.floor(need / 2);
+    // 对子颜色本排内去重：独立抽色有 41.7% 概率两对同色（同色 4 连必相邻，避无可避）
+    const used = {};
+    for (const t0 of ids) used[t0] = 1;
+    const drawT = () => {
+      let t, guard = 0;
+      do { t = Math.floor(Math.random() * curTypes); } while (used[t] && guard++ < 20);
+      used[t] = 1;
+      return t;
+    };
+    for (let i = 0; i < pairsN; i++){
+      const t = drawT();
+      ids.push(t, t);
+    }
+    if (need % 2){
+      const t = drawT();
+      ids.push(t);
+      oddDebt = t;
+    }
+    // 洗牌 + 避免同色相邻
+    shuffledNoAdj(ids);
+    const left = W / 2 - (n - 1) * SP / 2;
+    for (let c = 0; c < n; c++){
+      bubbles.push({
+        x: left + c * SP,
+        y: anchor - VSP,
+        r: BR,
+        jx: (Math.random() - 0.5) * 4,
+        isStatic: true,
+        m: Infinity,
+        rest: 0.5,
+        phase: Math.random() * TAU,
+        type: TYPES[ids[c]]
+      });
+    }
+  }
+
+  // 系统兜底：可消对判定（锁泡无对子概念，先解锁兜底）；留作保险，永不向用户收费
+  function canMatch(){
+    const cnt = {};
+    for (let i = 0; i < bubbles.length; i++){
+      if (bubbles[i].lock) continue;
+      cnt[bubbles[i].type.id] = (cnt[bubbles[i].type.id] || 0) + 1;
+    }
+    for (const k in cnt) if (cnt[k] >= 2) return true;
+    return false;
+  }
+
+  function reshuffle(){
+    const ts = bubbles.map(function(b){ return b.type; });
+    for (let i = ts.length - 1; i > 0; i--){
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = ts[i]; ts[i] = ts[j]; ts[j] = t;
+    }
+    for (let i = 0; i < bubbles.length; i++) bubbles[i].type = ts[i];
+  }
+
+  function lowestBubbleBottom(){
+    let m = -1e9;
+    for (let i = 0; i < bubbles.length; i++){
+      const v = bubbles[i].y + bubbles[i].r;
+      if (v > m) m = v;
+    }
+    return m;
+  }
+
+  function trackDeepest(){
+    const lb = lowestBubbleBottom();
+    if (lb > deepestBottom) deepestBottom = lb;
+  }
+
+  function checkFail(){
+    trackDeepest();
+    if (bubbles.length === 0){
+      // 棋盘全空：全局种类计数归零，oddDebt 债务清零，改用完全闭合补对（宽窄两排、内部成对）
+      oddDebt = null;
+      if (mode === 'endless'){
+        appendClosure(5);
+        floats.push({ x: W / 2, y: H / 2 - 80, text: '新的一排！', t: 0, life: 1.1, big: true });
+        return;
+      }
+      // 安全网（正常不可达）：供给=目标对数×2 枚，清空时必已消满；真发生说明有泡泡
+      // 被异常途径消耗，按剩余缺口补对让关卡仍可完成
+      if (targetPairs > 0 && pairsPopped < targetPairs){
+        appendClosure(Math.min(5, targetPairs - pairsPopped));
+        floats.push({ x: W / 2, y: H / 2 - 80, text: '继续！还差 ' + (targetPairs - pairsPopped) + ' 对', t: 0, life: 1.4, big: true });
+        return;
+      }
+      settle(true); return;
+    }
+    if (!canMatch()){
+      // 有锁泡时先免费解锁一个（锁泡占着对子可能造成表面无解）；真无解才洗牌
+      let lk = null;
+      for (const bb of bubbles){ if (bb.lock){ lk = bb; break; } }
+      if (lk) unlockBubble(lk); else reshuffle();
+    }
+    if (lowestBubbleBottom() > FAIL_Y) settle(false);
+  }
+
+  function settle(win){
+    if (!running) return;
+    running = false;
+
+    if (mode === 'endless'){
+      const best = Math.max(save.best, score);
+      save.best = best;
+      saveProgress();
+      ovTitle.textContent = '无尽 · 终局';
+      ovStars.innerHTML = '';
+      ovDesc.textContent =
+        '分数 ' + score + '　·　最高 ' + best + '\n' +
+        '本局消除 ' + pairsPopped + ' 对　·　撑过 ' + sinkCount + ' 排下落';
+      btnRevive.style.display = revived ? 'none' : 'block';
+      btnNext.style.display = 'none';
+      btnRestart.textContent = '再来一局';
+      btnMenu.style.display = 'block';
+      overlay.classList.add('on');
+      return;
+    }
+
+    const lastLevel = levelIdx >= LEVELS.length - 1;
+    // 闯关自然终局（胜/负）= 残局消费完毕，作废该关快照
+    if (mode === 'level' && resume && resume.idx === levelIdx) clearResume();
+    if (win){
+      const t = levelTime;
+      // 星级按分数判定（用户拍板）：满分 = 目标对数×30（全程高连击的理论上限）
+      // 达满分 85% 3★，50% 2★，其余 1★——连击才是三星之路
+      const maxScore = targetPairs * 30;
+      const ratio = maxScore > 0 ? score / maxScore : 0;
+      const pct = Math.min(100, Math.round(ratio * 100));
+      stars = ratio >= SCORE3 ? 3 : (ratio >= SCORE2 ? 2 : 1);
+      save.stars[levelIdx] = Math.max(save.stars[levelIdx] || 0, stars);
+      saveProgress();
+
+      ovTitle.textContent = lastLevel ? '全部通关' : ('第 ' + (levelIdx + 1) + ' 关 · 通过');
+      ovStars.innerHTML = '';
+      for (let i = 0; i < 3; i++){
+        const sp = document.createElement('span');
+        sp.className = i < stars ? 'on' : 'off';
+        sp.textContent = '★';
+        ovStars.appendChild(sp);
+      }
+      ovDesc.textContent =
+        '目标 ' + targetPairs + ' 对完成　·　用时 ' + t.toFixed(0) + ' 秒\n' +
+        '分数 ' + score + '（满分 ' + maxScore + ' 的 ' + pct + '%）\n' +
+        (stars === 3 ? '连击大师！' : '稳住连击才能上三星');
+
+      btnRevive.style.display = 'none';
+      btnMenu.style.display = 'block';
+      if (lastLevel){
+        btnNext.style.display = 'none';
+        btnRestart.textContent = '再玩一遍';
+      } else {
+        btnNext.style.display = 'block';
+        btnNext.textContent = '下一关';
+        btnRestart.textContent = '重玩本关';
+      }
+    } else {
+      stars = 0;
+      ovTitle.textContent = failByTime ? '时间到了' : '泡泡到底了';
+      ovStars.innerHTML = '';
+      ovDesc.textContent = '第 ' + (levelIdx + 1) + ' 关　·　已收 ' + collected + ' 件　·　分数 ' + score;
+      btnRevive.textContent = failByTime ? '看广告 · 补 20 秒' : '看广告 · 收回两行';
+      btnRevive.style.display = revived ? 'none' : 'block';
+      btnNext.style.display = 'none';
+      btnRestart.textContent = '重试';
+      btnMenu.style.display = 'block';
+    }
+    overlay.classList.add('on');
+  }
+
+  function loadProgress(){
+    try {
+      // 精简版独立存档键，不与完整版互踩
+      const o = JSON.parse(localStorage.getItem('bravobubble.lite.v1') || 'null');
+      if (o){
+        save = Object.assign(save, o);
+        save.stars = save.stars || {};
+      }
+    } catch (e) {}
+  }
+
+  function saveProgress(){
+    try {
+      localStorage.setItem('bravobubble.lite.v1', JSON.stringify(save));
+    } catch (e) {}
+  }
+
+  btnRevive.addEventListener('click', function(){
+    revived = true;
+    if (failByTime){
+      timeLeft = 20; timeLimit = Math.max(timeLimit, 20);   // 时间耗尽复活：补 20 秒（星级按剩余比例重算，基本只有 1★）
+      failByTime = false;
+    } else {
+      sinkLeft = 0;
+      for (let i = 0; i < bubbles.length; i++) bubbles[i].y -= VSP * 2;
+      for (let i = 0; i < bodies.length; i++) bodies[i].y -= VSP * 2;
+    }
+    overlay.classList.remove('on');
+    running = true;
+  });
+
+  btnNext.addEventListener('click', function(){ buildLevel(levelIdx + 1); });
+  btnRestart.addEventListener('click', function(){
+    if (mode === 'endless') buildEndless(); else buildLevel(levelIdx);
+  });
+
+  btnPause.addEventListener('click', function(){
+    if (props.pause <= 0 || !running) return;
+    props.pause--;
+    saveProgress();
+    pausedT = 5;
+    btnPause.textContent = '已暂停';
+    refreshHUD();
+  });
+  // 下落：主动沉一排（免费、无数量），换新血也自担压线风险；暂停期间无效
+  btnSink.addEventListener('click', function(){
+    if (!running || pausedT > 0) return;
+    addSink();
+    descendT = 0;
+  });
+  btnShuffle.addEventListener('click', function(){
+    if (props.shuffle <= 0 || !running) return;
+    props.shuffle--;
+    saveProgress();
+    reshuffle();
+    shakeT = 0.25;
+    floats.push({ x: W / 2, y: H / 2 - 40, text: '已打乱！', t: 0, life: 0.9, big: true });
+    refreshHUD();
+  });
+  // 加时道具：+15 秒。只加剩余时间（timeLeft），不动原限时（timeLimit）——
+  // 时间只负责失败判定（星级由分数定），加时买的是操作空间
+  btnTime.addEventListener('click', function(){
+    if (props.time <= 0 || !running || pausedT > 0 || timeLimit <= 0) return;
+    props.time--;
+    saveProgress();
+    timeLeft += 15;
+    floats.push({ x: W / 2, y: H / 2 - 60, text: '+15 秒', t: 0, life: 0.9, big: true });
+    refreshHUD();
+  });
+
+  /* ================= 主页 / 章节 / 图鉴 / 盲盒 ================= */
+  const menuP = document.getElementById('menu');
+  const chapP = document.getElementById('chapters');
+  const mMeta = document.getElementById('mMeta');
+  const chList= document.getElementById('chList');
+
+  function showPanel(p){
+    [menuP, chapP, quitP].forEach(function(x){ x.classList.remove('on'); });
+    overlay.classList.remove('on');
+    running = false;
+    if (p) p.classList.add('on');
+    refreshHUD();
+  }
+
+  function showMenu(){
+    mMeta.textContent = '关卡 64 关　·　无尽冲最高分 ' + save.best +
+      '\n道具每局固定发放：缓降 / 暂停 / 打乱 / 加时 各 2 个';
+    showPanel(menuP);
+  }
+
+  // 逐关解锁：通过第 n 关解锁第 n+1 关（测试用 unlockedAll 全开）
+  function levelUnlocked(i){
+    if (save.unlockedAll || i === 0) return true;
+    return save.stars[i - 1] > 0;
+  }
+
+  function buildChapters(){
+    chList.innerHTML = '';
+    const wrap = document.createElement('div');
+    wrap.className = 'lv';
+    wrap.style.flexWrap = 'wrap';
+    let html = '';
+    for (let i = 0; i < LEVELS.length; i++){
+      const s = save.stars[i] || 0;
+      const un = levelUnlocked(i);
+      const isRes = resume && resume.idx === i;
+      html += '<button data-idx="' + i + '"' + (un ? '' : ' disabled') + '>' +
+        (un ? '第' + (i + 1) + '关' : '🔒') + '<br>' +
+        '<span style="font-size:10px;opacity:.75' + (isRes ? ';color:#E2793F;font-weight:700' : '') + '">' +
+        (isRes ? '▶ 有残局' : (un ? ('★'.repeat(s) + '☆'.repeat(3 - s)) : '通关上一关解锁')) + '</span></button>';
+    }
+    wrap.innerHTML = html;
+    chList.appendChild(wrap);
+    const btns = chList.querySelectorAll('button[data-idx]');
+    for (let i = 0; i < btns.length; i++){
+      btns[i].addEventListener('click', function(){
+        const idx = +this.getAttribute('data-idx');
+        showPanel(null);
+        // 该关存有残局 → 直接接着玩；否则正常开局
+        if (resume && resume.idx === idx) restoreResume(); else buildLevel(idx);
+      });
+    }
+  }
+
+  document.getElementById('mStory').addEventListener('click', function(){ buildChapters(); showPanel(chapP); });
+  // 无尽：直接开局（精简版无章节主题）
+  document.getElementById('mEndless').addEventListener('click', function(){ showPanel(null); buildEndless(); });
+  document.getElementById('chBack').addEventListener('click', showMenu);
+  document.getElementById('chUnlock').addEventListener('click', function(){
+    save.unlockedAll = true; saveProgress(); buildChapters();
+  });
+  btnHome.addEventListener('click', function(){
+    // 无尽模式：主页键 = 主动结束，进结算页（分数/对数/盲盒进度）；闯关模式：直接回主页
+    if (mode === 'endless' && running){ settle(false); return; }
+    showMenu();
+  });
+
+  /* ================= 退出按钮与残局暂存 =================
+     闯关局内左上 ✕ → 弹窗：稍后继续（存残局，下次点同关接着玩）/ 立即结算（本局作废） */
+  let resume = null;
+  try { resume = JSON.parse(localStorage.getItem('bravobubble.resume.v1') || 'null'); } catch (e) {}
+  function saveResumeNow(){
+    const obj = {
+      v: 1, idx: levelIdx, targetPairs: targetPairs,
+      pairsPopped: pairsPopped, score: score, collected: collected,
+      timeLeft: timeLeft, timeLimit: timeLimit, combo: combo, comboT: comboT,
+      globalLockCharge: globalLockCharge,
+      bubbles: bubbles.map(function(b){
+        return { x: Math.round(b.x), y: Math.round(b.y), t: b.type.id,
+                 lock: b.lock || 0, lockLeft: b.lockLeft || 0, lockNeed: b.lockNeed || 0 };
+      })
+    };
+    resume = obj;
+    try { localStorage.setItem('bravobubble.resume.v1', JSON.stringify(obj)); } catch (e) {}
+  }
+  function clearResume(){
+    resume = null;
+    try { localStorage.removeItem('bravobubble.resume.v1'); } catch (e) {}
+  }
+  // 恢复残局：正常重建关卡后用快照覆盖（随机装饰字段 jx/phase 重掷不影响玩法）
+  function restoreResume(){
+    const r = resume;
+    clearResume();
+    buildLevel(r.idx);
+    bubbles = r.bubbles.map(function(o){
+      return { x: o.x, y: o.y, r: BR,
+        jx: (Math.random() - 0.5) * 4, isStatic: true, m: Infinity, rest: 0.5,
+        phase: Math.random() * TAU, type: TYPES[o.t],
+        lock: o.lock, lockLeft: o.lockLeft, lockNeed: o.lockNeed };
+    });
+    bodies = []; pops = []; particles = []; floats = []; sel = null;
+    pairsPopped = r.pairsPopped; score = r.score; collected = r.collected;
+    timeLimit = r.timeLimit; timeLeft = r.timeLeft;
+    combo = r.combo; comboT = r.comboT;
+    globalLockCharge = r.globalLockCharge || 0;
+    sinkLeft = 0; descendT = 0; pausedT = 0; slowOn = false; failByTime = false;
+    deepestBottom = lowestBubbleBottom();
+    running = true;
+    refreshHUD();
+  }
+  // 立即结算：本局作废（残局清除），按当前进度出结算页，无复活
+  function quitSettle(){
+    running = false;
+    ovTitle.textContent = '本局结束';
+    ovStars.innerHTML = '';
+    ovDesc.textContent = '第 ' + (levelIdx + 1) + ' 关　·　分数 ' + score +
+      '　·　已消除 ' + pairsPopped + '/' + targetPairs + ' 对\n下次进入本关将重新开始';
+    btnRevive.style.display = 'none';
+    btnNext.style.display = 'none';
+    btnRestart.style.display = 'block';
+    btnRestart.textContent = '重新开始';
+    btnMenu.style.display = 'block';
+    overlay.classList.add('on');
+    refreshHUD();
+  }
+  btnQuit.addEventListener('click', function(){
+    if (mode !== 'level' || !running) return;
+    running = false;               // 弹窗期间冻结：时间不下走、泡泡不掉
+    showPanel(quitP);
+  });
+  document.getElementById('qResume').addEventListener('click', function(){
+    saveResumeNow();
+    showMenu();
+  });
+  document.getElementById('qSettle').addEventListener('click', function(){
+    clearResume();
+    showPanel(null);
+    quitSettle();
+  });
+  document.getElementById('qCancel').addEventListener('click', function(){
+    showPanel(null);
+    running = true;
+    refreshHUD();
+  });
+  btnMenu.addEventListener('click', function(){ showMenu(); });
+  btnSlow.addEventListener('click', function(){
+    if (slowOn || props.slow <= 0 || !running) return;
+    props.slow--;
+    slowOn = true;
+    saveProgress();
+    refreshHUD();
+  });
+
+  /* ================= 倾斜 ================= */
+  window.addEventListener('deviceorientation', function(e){
+    if (e.gamma === null || e.gamma === undefined) return;
+    const v = Math.max(-45, Math.min(45, e.gamma));
+    tiltX = (v / 45) * 0.9;
+  }, true);
+
+  window.addEventListener('keydown', function(e){
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A'){
+      tiltX = Math.max(-0.9, tiltX - 0.18);
+    } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D'){
+      tiltX = Math.min(0.9, tiltX + 0.18);
+    } else if (e.key === ' ' || e.key === 'ArrowDown'){
+      tiltX = 0;
+    }
+  });
+
+  /* ================= HUD ================= */
+  function fmtTime(s){
+    s = Math.max(0, Math.ceil(s));
+    return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
+  }
+  function refreshHUD(){
+    sScore.textContent = score;
+    sLevel.textContent = mode === 'endless' ? '∞' : (levelIdx + 1);
+    // 消除进度：闯关显示 目标进度 n/target，无尽显示本局对数
+    sGot.textContent = (mode === 'level' && targetPairs > 0) ? pairsPopped + '/' + targetPairs : pairsPopped;
+    sTime.textContent = mode === 'endless' ? '∞' : fmtTime(timeLeft);
+    sTime.style.color = '';
+    btnPause.disabled = props.pause <= 0;
+    btnPause.textContent = '暂停 ×' + props.pause;
+    btnSlow.disabled = slowOn || props.slow <= 0;
+    btnSlow.textContent = slowOn ? '下落已放缓' : '缓降 ×' + props.slow;
+    btnShuffle.disabled = props.shuffle <= 0;
+    btnShuffle.textContent = '打乱 ×' + props.shuffle;
+    btnTime.disabled = timeLimit <= 0 || props.time <= 0;
+    btnTime.textContent = '加时 ×' + props.time;
+    btnHome.textContent = (mode === 'endless' && running) ? '结束' : '☰ 主页';
+    // 退出按钮：闯关局内进行中才显示（无尽用「结束」键）
+    btnQuit.className = (mode === 'level' && running) ? 'on' : '';
+  }
+
+  // 连击大字：固定在 HUD 下方，越连越惊艳 + 弹跳；下挂读秒条
+  function showCombo(){
+    const words = ['', '', '漂亮！', '好棒！', '厉害！', '太强了！', '逆天了！', '超神啦！', '无人能挡！'];
+    const hues  = ['', '', '#E2A94A', '#E2934A', '#E2793F', '#DB5B4A', '#C74E8C', '#9B59C9', '#5F6BE2'];
+    const i = Math.min(combo, words.length - 1);
+    comboText.textContent = '×' + combo + ' ' + words[i];
+    comboText.style.color = hues[i];
+    comboScale = 1.5;
+    comboBarI.style.width = '100%';
+    comboZone.style.opacity = '1';
+  }
+
+  /* ================= 渲染 ================= */
+  function render(){
+    ctx.save();
+
+    // 纯色背景，没有任何棋盘线
+    ctx.fillStyle = BG;
+    ctx.fillRect(0, 0, W, H);
+
+    if (shakeT > 0){
+      const k = shakeT / 0.12;
+      ctx.translate((Math.random() - 0.5) * 4 * k, (Math.random() - 0.5) * 3 * k);
+    }
+
+    // 底线：一层很淡的暖色晕，不用虚线框
+    const fg = ctx.createLinearGradient(0, FAIL_Y - 40, 0, H);
+    fg.addColorStop(0, 'rgba(226,110,96,0)');
+    fg.addColorStop(1, 'rgba(226,110,96,.16)');
+    ctx.fillStyle = fg;
+    ctx.fillRect(0, FAIL_Y - 40, W, H - FAIL_Y + 40);
+    ctx.strokeStyle = 'rgba(226,110,96,.26)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, FAIL_Y + 0.5); ctx.lineTo(W, FAIL_Y + 0.5); ctx.stroke();
+
+    // 开局淡入
+    const enterFade = Math.min(1, levelTime * 3.2);
+
+    // 泡泡
+    for (let i = 0; i < bubbles.length; i++){
+      const b = bubbles[i];
+      const bx = b.x + b.jx;                                   // 视觉抖动
+      const by = b.y + Math.sin(nowT * 1.5 + b.phase) * 1.2;   // 轻微浮动，只有视觉偏移
+      drawBubble(b, bx, by, sel === b, enterFade);
+    }
+
+    // 顶部雾化：泡泡从屏幕外滑进来时淡入，不会硬顶着 HUD
+    const tf = ctx.createLinearGradient(0, 0, 0, 118);
+    tf.addColorStop(0, 'rgba(237,242,244,.96)');
+    tf.addColorStop(0.55, 'rgba(237,242,244,.70)');
+    tf.addColorStop(1, 'rgba(237,242,244,0)');
+    ctx.fillStyle = tf;
+    ctx.fillRect(0, 0, W, 118);
+
+    // 自由物件
+    for (let i = 0; i < bodies.length; i++){
+      const a = bodies[i];
+      drawObject(ctx, a.type, a.x, a.y, a.type.ds * a.grow * 0.92, a.rot, 1);
+
+      if (a.vy > 500){
+        ctx.globalAlpha = Math.min(0.16, a.vy / 4200);
+        ctx.fillStyle = a.type.color;
+        ctx.beginPath();
+        ctx.ellipse(a.x, a.y - a.r * 1.9, a.r * 0.42, a.r * 0.9, 0, 0, TAU);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // 破裂环
+    for (let i = 0; i < pops.length; i++){
+      const p = pops[i];
+      const k = p.t / 0.42;
+      ctx.globalAlpha = (1 - k) * 0.7;
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = 2.4 * (1 - k) + 0.4;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, BR * (0.6 + k * 1.9), 0, TAU);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    // 碎屑
+    for (let i = 0; i < particles.length; i++){
+      const p = particles[i];
+      const k = p.t / p.life;
+      ctx.globalAlpha = (1 - k) * 0.6;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 2.1 * (1 - k), 0, TAU);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // 飘字（连击 / 得分）
+    ctx.textAlign = 'center';
+    for (let i = 0; i < floats.length; i++){
+      const f = floats[i];
+      const k = f.t / f.life;
+      const rise = k * (f.big ? 46 : 30);
+      ctx.globalAlpha = Math.max(0, Math.min(1, (1 - k) * 1.8));
+      ctx.fillStyle = f.big ? SEL : 'rgba(62,104,120,.9)';
+      ctx.font = '700 ' + (f.big ? 25 : 15) + 'px -apple-system,"PingFang SC",sans-serif';
+      ctx.fillText(f.text, f.x, f.y - 16 - rise);
+    }
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'left';
+
+    // 下沉进度
+    if (running){
+      const k = Math.min(1, descendT / stepInterval());
+      ctx.fillStyle = 'rgba(40,70,80,.10)';
+      ctx.fillRect(W / 2 - 60, H - 46, 120, 3);
+      ctx.fillStyle = pausedT > 0 ? 'rgba(70,150,190,.85)' : 'rgba(226,121,63,.7)';
+      ctx.fillRect(W / 2 - 60, H - 46, 120 * (1 - k), 3);
+    }
+
+    ctx.restore();
+  }
+
+  /* ================= 主循环 ================= */
+  let last = performance.now();
+
+  function loop(now){
+    const dt = Math.min((now - last) / 1000, 0.05);
+    last = now;
+    nowT += dt;
+    sndBudget = 4;
+
+    if (running){
+      levelTime += dt;
+      if (pausedT > 0){
+        pausedT -= dt;
+        if (pausedT <= 0){ pausedT = 0; refreshHUD(); }   // 暂停结束，按钮文案复位
+      } else {
+        // 关卡倒计时：时间耗尽=失败（failByTime 决定复活方式：补 20 秒）
+        if (timeLimit > 0){
+          timeLeft -= dt;
+          sTime.textContent = fmtTime(timeLeft);
+          sTime.style.color = timeLeft < 15 ? '#DB5B4A' : '';
+          if (timeLeft <= 0){
+            timeLeft = 0;
+            failByTime = true;
+            settle(false);
+          }
+        }
+        // 补排（仅无尽）：屏幕外没有藏排了就在顶上补，传送带永远有新血。
+        // 闯关不补排——总供给就是目标对数×2 枚开局全排进棋盘，通关=完全消完
+        if (mode === 'endless' && !aboveScreenExists()) appendRows();
+        // 保底 20 个：屏幕上（不含横幅遮住的）泡泡不足 20，且上方还有被遮挡的泡泡
+        // → 立即自动下沉一排补位。无尽传送带永远供得上；闯关供给有限，
+        //   终局藏排耗尽后护栏自然失效，屏上剩的消完即通关（棋盘清空=过关）
+        if (sinkLeft <= 0 && onScreenCount() < MIN_ONSCREEN && unrevealedExists()){
+          addSink();
+          descendT = 0;
+        }
+        descendT += dt;
+        if (descendT >= stepInterval()){
+          descendT -= stepInterval();
+          addSink();
+        }
+        if (sinkLeft > 0){
+          // 屏上缺口越大滑得越快（1~4 倍速）：min-20 补位必须接得住快手，
+          // 否则补给速度贴着消耗速度走，屏幕会长期贴着空（匀速只保证观感平稳）
+          const deficit = Math.max(0, MIN_ONSCREEN - onScreenCount());
+          const rush = 1 + Math.min(3, deficit / 6);
+          const move = Math.min(sinkLeft, sinkLeft * dt * 7 * rush + 0.25 * rush);
+          for (let i = 0; i < bubbles.length; i++) bubbles[i].y += move;
+          sinkLeft -= move;
+          if (sinkLeft <= 0) sinkLeft = 0;
+          // 每帧都查：泡泡越线的当下就结算，不允许「压着线再补最后一刀」
+          checkFail();
+        }
+      }
+    }
+
+    if (comboT > 0){
+      comboT -= dt;
+      comboBarI.style.width = Math.max(0, comboT / COMBO_WINDOW * 100) + '%';
+      if (comboScale > 1) comboScale = Math.max(1, comboScale - dt * 2.2);
+      comboText.style.transform = 'scale(' + comboScale + ')';
+      if (comboT <= 0){
+        combo = 0;
+        comboZone.style.opacity = '0';
+      }
+    }
+    if (shakeT > 0) shakeT = Math.max(0, shakeT - dt);
+
+    for (let i = pops.length - 1; i >= 0; i--){
+      pops[i].t += dt;
+      if (pops[i].t > 0.42) pops.splice(i, 1);
+    }
+    for (let i = particles.length - 1; i >= 0; i--){
+      const p = particles[i];
+      p.t += dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy += 420 * dt;
+      if (p.t > p.life) particles.splice(i, 1);
+    }
+    for (let i = floats.length - 1; i >= 0; i--){
+      floats[i].t += dt;
+      if (floats[i].t > floats[i].life) floats.splice(i, 1);
+    }
+
+    if (running) physicsStep(dt);
+    else if (bodies.length) physicsStep(dt * 0.6);
+
+    render();
+    requestAnimationFrame(loop);
+  }
+
+  loadProgress();
+  buildLevel(0);
+  running = false;          // 开局先停在主页
+  showMenu();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

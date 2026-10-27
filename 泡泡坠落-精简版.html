@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>泡泡坠落 · 玩法原型 v4.1</title>
+<title>Bubble Fall</title>
 <style>
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0}
   html,body{height:100%;background:#DCE6E9;overflow:hidden;
@@ -85,6 +85,8 @@
     padding:8px 14px;border-radius:16px;background:rgba(40,70,80,.08);color:#2B3B42;
     font-size:12px;font-weight:500}
   .meta-line{font-size:11px;opacity:.55;line-height:1.8;text-align:center;white-space:pre-line}
+  .lv{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;width:100%;max-width:320px}
+  .lv button{padding:9px 2px;font-size:12px;border-radius:12px;width:auto}
   .chap{width:100%;max-width:320px;border:1px solid rgba(40,70,80,.14);border-radius:14px;
     padding:12px 14px;background:rgba(255,255,255,.5)}
   .chap .cn{font-size:13px;font-weight:700;margin-bottom:8px}
@@ -153,11 +155,10 @@
   </div>
 
   <div id="menu" class="panel">
-    <h1>泡泡坠落</h1>
+    <h1>Bubble Fall</h1>
     <div class="tag">POP · DROP · MATCH</div>
     <button id="mStory">闯关模式</button>
     <button id="mEndless">无尽模式</button>
-    <div class="meta-line" id="mMeta"></div>
   </div>
 
   <div id="chapters" class="panel">
@@ -168,7 +169,6 @@
 
   <div id="quitP" class="panel">
     <h1 style="font-size:20px;letter-spacing:3px">退出本局？</h1>
-    <div class="meta-line">稍后继续会保存当前残局，下次从本关进入时接着玩；立即结算则本局作废</div>
     <button id="qResume">稍后继续</button>
     <button id="qSettle" class="ghost">立即结算</button>
     <button id="qCancel" class="ghost">继续游戏</button>
@@ -225,6 +225,16 @@
     { id:5, name:'石雕',  color:'#AE9C82', mat:'石',   shape:'hex',      r:14, rest:0.32, dens:2.1, ds:14.3 }
   ];
 
+  // 蜂窝邻域已放泡的颜色集合（水平 60 / 斜向 52 内）——供取色时错开用
+  function neighborColors(x, y){
+    const s = {};
+    for (let i = 0; i < bubbles.length; i++){
+      const b = bubbles[i];
+      if (Math.abs(b.x - x) < SP * 1.1 && Math.abs(b.y - y) < VSP * 1.1) s[b.type.id] = 1;
+    }
+    return s;
+  }
+
   /* ================= 布局（棋盘只存在于代码里，不画出来） ================= */
   const BG = '#EDF2F4';
   const SEL = '#E2793F';      // 选中描边
@@ -249,20 +259,6 @@
   const SCORE3 = 0.85, SCORE2 = 0.50;      // 星级按分数：达满分（目标对数×30）85% 3★，50% 2★，其余 1★
   const LOCK3_NEED = 4;                    // 全局锁：任意消除 4 次解锁
 
-  // 生成排布用：洗牌并尽量避开同色相邻（成对生成≠成对摆放；纯随机洗牌天然有 ~33% 相邻同色率，
-  // 观感上就是「同色总是挨着」——重采样最多 8 次，极端重复色场景接受失败）
-  function shuffledNoAdj(ids){
-    for (let tries = 0; tries < 8; tries++){
-      for (let i = ids.length - 1; i > 0; i--){
-        const j = Math.floor(Math.random() * (i + 1));
-        const t = ids[i]; ids[i] = ids[j]; ids[j] = t;
-      }
-      let bad = false;
-      for (let i = 1; i < ids.length; i++) if (ids[i] === ids[i - 1]){ bad = true; break; }
-      if (!bad) return ids;
-    }
-    return ids;
-  }
   const LEVELS = [];
   for (let i = 0; i < 64; i++){
     // 难度曲线按原 4 阶段公式递进（阶段=每 16 关一档），UI 上不分章、64 关一页平铺
@@ -276,7 +272,7 @@
     if (c === 3){ locks.n1 = 2; locks.n2 = 4; locks.n3 = 4; }
     LEVELS.push({
       rows: Math.min(6 + c + (l >= 8 ? 1 : 0), 9),
-      types: Math.min(3 + c + Math.floor(l / 5), 6),
+      types: Math.min(4 + c + Math.floor(l / 5), 6),
       pairs: 30 + c * 12 + l * 3,
       locks: locks
     });
@@ -660,24 +656,44 @@
     curTypes = typeN;   // 补排（appendRows）与此同源，不引入关卡外的种类
     const per = Math.floor(pairs / typeN);
     let rem = pairs - per * typeN;
-    const ids = [];
+    const pool = [];
     for (let ti = 0; ti < typeN; ti++){
       const n = per + (rem-- > 0 ? 1 : 0);
-      for (let i = 0; i < n; i++){ ids.push(ti); ids.push(ti); }
+      for (let i = 0; i < n; i++){ pool.push(ti); pool.push(ti); }
     }
-    shuffledNoAdj(ids);
+    // 池打散（池本身每色偶数，洗牌不影响成对供给）
+    for (let i = pool.length - 1; i > 0; i--){
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = pool[i]; pool[i] = pool[j]; pool[j] = t;
+    }
+    // 邻接错色取泡：优先取「池中剩余最多且不与蜂窝邻域同色」的——
+    // 旧实现只约束线性相邻，铺进蜂窝后排间同色相邻概率 3 色时高达 ~55%，
+    // 观感就是同款老挤在一起；贪心错色后开局相邻同色接近 0，且不破坏成对供给
+    const cnt = {};
+    for (const t0 of pool) cnt[t0] = (cnt[t0] || 0) + 1;
+    const takeFromPool = (avoid) => {
+      let bi = -1, bn = -1;
+      for (let i = 0; i < pool.length; i++){
+        if (avoid[pool[i]]) continue;
+        if (cnt[pool[i]] > bn){ bn = cnt[pool[i]]; bi = i; }
+      }
+      if (bi < 0) bi = pool.length - 1;   // 全冲突放宽（窄色深坑偶发，概率极低）
+      const t = pool.splice(bi, 1)[0];
+      cnt[t]--;
+      return t;
+    };
 
     // 整片以「最下一排」为锚点向上长：排数越多，藏在上方的排就越多，
     // 开局只露出下半截，下沉时上方的泡泡才慢慢滑进画面
-    let k = 0;
     for (let r = 0; r < rowN.length; r++){
       const n = rowN[r];
       const y = BASE_BOTTOM - (rowN.length - 1 - r) * VSP;
       const left = W / 2 - (n - 1) * SP / 2;   // 每排独立居中 → 间距绝对均匀
       for (let c = 0; c < n; c++){
         if (r === holeRow && c === holeCol) continue;   // 顶排的空位
+        const bx = left + c * SP;
         bubbles.push({
-          x: left + c * SP,
+          x: bx,
           y: y,
           r: BR,
           jx: (Math.random() - 0.5) * 4,   // ±2px 视觉抖动：只影响绘制，不影响命中与物理
@@ -685,7 +701,7 @@
           m: Infinity,
           rest: 0.5,
           phase: Math.random() * TAU,
-          type: TYPES[ids[k++]],
+          type: TYPES[takeFromPool(neighborColors(bx, y))],
           lock: 0, lockLeft: 0, lockNeed: 0
         });
       }
@@ -695,15 +711,15 @@
     // 锁泡泡分配（仅闯关）：随机挑泡泡上锁。锁泡照常占位与下沉，但不显示内容、不可匹配，
     // 按等级解锁：1=消 1 个邻近泡泡 / 2=消 2 个邻近泡泡 / 3=任意消除 4 次（全局计数）
     if (cfg.locks && (cfg.locks.n1 || cfg.locks.n2 || cfg.locks.n3)){
-      const pool = bubbles.slice();
-      for (let i = pool.length - 1; i > 0; i--){
+      const lockPool = bubbles.slice();
+      for (let i = lockPool.length - 1; i > 0; i--){
         const j = Math.floor(Math.random() * (i + 1));
-        const t = pool[i]; pool[i] = pool[j]; pool[j] = t;
+        const t = lockPool[i]; lockPool[i] = lockPool[j]; lockPool[j] = t;
       }
       let k2 = 0;
       const assign = (n, lv, need) => {
-        for (let i = 0; i < n && k2 < pool.length; i++){
-          const b = pool[k2++]; b.lock = lv; b.lockLeft = need; b.lockNeed = need;
+        for (let i = 0; i < n && k2 < lockPool.length; i++){
+          const b = lockPool[k2++]; b.lock = lv; b.lockLeft = need; b.lockNeed = need;
         }
       };
       if (cfg.locks.n1) assign(cfg.locks.n1, 1, 1);
@@ -1071,25 +1087,34 @@
       const t = drawT();
       ids.push(t, t);
     }
-    shuffledNoAdj(ids);
-    const put = (arr, rowIdx) => {
-      const n = arr.length;
+    // 洗牌打散（池每色偶数，不影响对子供给），铺排时逐枚邻接错色
+    for (let i = ids.length - 1; i > 0; i--){
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = ids[i]; ids[i] = ids[j]; ids[j] = t;
+    }
+    const put = (rowIdx, n) => {
       if (!n) return;
       const y = top - VSP - rowIdx * VSP;   // 往屏幕外铺（藏在 HUD 上方）：第一排先滑入，绝不凭空出现
       const left = W / 2 - (n - 1) * SP / 2;
       for (let c = 0; c < n; c++){
+        const bx = left + c * SP;
+        const av = neighborColors(bx, y);
+        // 邻接错色：取池中第一枚不与蜂窝邻域同色的；全冲突取池尾（概率极低）
+        let bi = ids.findIndex(function(t0){ return !av[t0]; });
+        if (bi < 0) bi = ids.length - 1;
+        const id = ids.splice(bi, 1)[0];
         bubbles.push({
-          x: left + c * SP, y, r: BR,
+          x: bx, y, r: BR,
           jx: (Math.random() - 0.5) * 4,
           isStatic: true, m: Infinity, rest: 0.5,
           phase: Math.random() * TAU,
-          type: TYPES[arr[c]],
+          type: TYPES[id],
           lock: 0, lockLeft: 0, lockNeed: 0
         });
       }
     };
-    put(ids.slice(0, 6), 0);
-    put(ids.slice(6), 1);
+    put(0, Math.min(6, ids.length));
+    put(1, ids.length);
   }
 
   function appendRows(){
@@ -1122,12 +1147,20 @@
       ids.push(t);
       oddDebt = t;
     }
-    // 洗牌 + 避免同色相邻
-    shuffledNoAdj(ids);
+    // 洗牌打散（池每色偶数，不影响对子供给），铺排时逐枚邻接错色（与棋盘顶排、排内左右全错开）
+    for (let i = ids.length - 1; i > 0; i--){
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = ids[i]; ids[i] = ids[j]; ids[j] = t;
+    }
     const left = W / 2 - (n - 1) * SP / 2;
     for (let c = 0; c < n; c++){
+      const bx = left + c * SP;
+      const av = neighborColors(bx, anchor - VSP);
+      let bi = ids.findIndex(function(t0){ return !av[t0]; });
+      if (bi < 0) bi = ids.length - 1;
+      const id = ids.splice(bi, 1)[0];
       bubbles.push({
-        x: left + c * SP,
+        x: bx,
         y: anchor - VSP,
         r: BR,
         jx: (Math.random() - 0.5) * 4,
@@ -1135,7 +1168,7 @@
         m: Infinity,
         rest: 0.5,
         phase: Math.random() * TAU,
-        type: TYPES[ids[c]]
+        type: TYPES[id]
       });
     }
   }
@@ -1347,7 +1380,6 @@
   /* ================= 主页 / 章节 / 图鉴 / 盲盒 ================= */
   const menuP = document.getElementById('menu');
   const chapP = document.getElementById('chapters');
-  const mMeta = document.getElementById('mMeta');
   const chList= document.getElementById('chList');
 
   function showPanel(p){
@@ -1359,8 +1391,6 @@
   }
 
   function showMenu(){
-    mMeta.textContent = '关卡 64 关　·　无尽冲最高分 ' + save.best +
-      '\n道具每局固定发放：缓降 / 暂停 / 打乱 / 加时 各 2 个';
     showPanel(menuP);
   }
 
@@ -1374,7 +1404,6 @@
     chList.innerHTML = '';
     const wrap = document.createElement('div');
     wrap.className = 'lv';
-    wrap.style.flexWrap = 'wrap';
     let html = '';
     for (let i = 0; i < LEVELS.length; i++){
       const s = save.stars[i] || 0;
